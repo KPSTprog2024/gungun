@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>なぞって練習ゲーム</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;font-family:sans-serif;background:#f2f7ff;display:flex;flex-direction:column}
+#topbar{padding:4px 8px;background:#4285f4;color:#fff;display:flex;justify-content:space-between;align-items:center}
+#canvas{flex:1;touch-action:none;background:#fff}
+button{padding:6px 12px;font-size:16px}
+.result{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;font-weight:bold;color:#ff4081;pointer-events:none;animation:pop 0.8s}
+@keyframes pop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3)}60%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <span id="stageName">Stage 1 / 縦線</span>
+  <button id="nextBtn">次へ</button>
+</div>
+<canvas id="canvas"></canvas>
+
+<script>
+/* ==== 基本データ ==== */
+const STAGES = [
+  { id:"S1-1", name:"縦線をなぞろう", tolerance:15, guide:(ctx,w,h)=>{
+      ctx.strokeStyle="#ccc";ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(w/2, h*0.1); ctx.lineTo(w/2, h*0.9); ctx.stroke();
+      return new Path2D(`M ${w/2} ${h*0.1} L ${w/2} ${h*0.9}`);
+  }},
+  // 以降 S1-2 … S7 を追加
+];
+
+/* ==== DOM ==== */
+const canvas = document.getElementById("canvas");
+const ctx     = canvas.getContext("2d");
+const stageName = document.getElementById("stageName");
+const nextBtn = document.getElementById("nextBtn");
+
+/* ==== リサイズ ==== */
+function fitCanvas(){canvas.width=canvas.clientWidth;canvas.height=canvas.clientHeight;renderGuide()}
+window.addEventListener("resize",fitCanvas);
+
+/* ==== ステージ制御 ==== */
+let currentStageIndex=0, guidePath=null, drawing=[], isDown=false;
+function loadStage(i){
+  currentStageIndex=i; const st=STAGES[i];
+  stageName.textContent=`Stage ${i+1} – ${st.name}`;
+  drawing=[]; guidePath=null; fitCanvas();
+}
+nextBtn.onclick=()=>loadStage((currentStageIndex+1)%STAGES.length);
+
+/* ==== ガイド描画 ==== */
+function renderGuide(){
+  const st=STAGES[currentStageIndex];
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  guidePath=st.guide(ctx,canvas.width,canvas.height);
+}
+
+/* ==== 入力 ==== */
+canvas.addEventListener("pointerdown",e=>{
+  if(e.pointerType!=="pen"&&e.pointerType!=="touch"&&e.pointerType!=="mouse")return;
+  isDown=true; drawing=[[e.offsetX,e.offsetY]];
+});
+canvas.addEventListener("pointermove",e=>{
+  if(!isDown)return;
+  drawing.push([e.offsetX,e.offsetY]);
+  drawStroke();
+});
+canvas.addEventListener("pointerup",e=>{
+  isDown=false;
+  evaluate();
+});
+function drawStroke(){
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle="#000"; ctx.lineWidth=3;
+  ctx.beginPath();
+  const d=drawing;
+  ctx.moveTo(d[d.length-2][0],d[d.length-2][1]);
+  ctx.lineTo(d[d.length-1][0],d[d.length-1][1]);
+  ctx.stroke();
+}
+
+/* ==== 評価 ==== */
+function evaluate(){
+  const st=STAGES[currentStageIndex]; if(!guidePath)return;
+  // サンプリングして平均距離計算
+  let sum=0,count=0;
+  for(const [x,y] of drawing){
+    const isOn = ctx.isPointInStroke(guidePath,x,y);
+    if(!isOn) sum++;
+    count++;
+  }
+  const errRatio = sum/count;
+  showResult(errRatio < st.tolerance/100 ? "Success!" : "Try Again");
+}
+function showResult(msg){
+  const div=document.createElement("div");
+  div.className="result"; div.textContent=msg;
+  document.body.appendChild(div);
+  setTimeout(()=>div.remove(),800);
+}
+
+/* ==== 起動 ==== */
+loadStage(0);
+</script>
+</body>
+</html>
