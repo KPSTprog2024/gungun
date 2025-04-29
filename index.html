@@ -2,107 +2,273 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>なぞって練習ゲーム</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>えんぴつあそび – Pen Practice Game</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!-- ==== ✂️ style.css に分けたくなったらここを抜き出す ==== -->
 <style>
-html,body{margin:0;height:100%;font-family:sans-serif;background:#f2f7ff;display:flex;flex-direction:column}
-#topbar{padding:4px 8px;background:#4285f4;color:#fff;display:flex;justify-content:space-between;align-items:center}
-#canvas{flex:1;touch-action:none;background:#fff}
-button{padding:6px 12px;font-size:16px}
-.result{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;font-weight:bold;color:#ff4081;pointer-events:none;animation:pop 0.8s}
-@keyframes pop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3)}60%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Arial Rounded MT Bold','Hiragino Maru Gothic ProN',sans-serif;
+     background:#f9f7f0;color:#333;height:100vh;overflow:hidden}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px}
+h1{font-size:26px;color:#ff6b6b}
+.stage-badge{font-size:18px;background:#ffeaa7;padding:6px 14px;border-radius:20px;
+             box-shadow:0 2px 5px rgba(0,0,0,.12)}
+canvas{flex:1;background:#fff;border-radius:15px;
+       box-shadow:0 4px 15px rgba(0,0,0,.08);touch-action:none}
+.controls{display:flex;justify-content:space-around;padding:16px 20px}
+button{border:none;border-radius:25px;padding:12px 26px;font-size:17px;font-weight:bold;
+       color:#fff;box-shadow:0 4px 8px rgba(0,0,0,.1);transition:.2s}
+button:active{transform:scale(.95);box-shadow:0 2px 4px rgba(0,0,0,.1)}
+#prev{background:#a29bfe} #next{background:#55efc4} #clear{background:#ff7675}
+#confetti-layer{position:absolute;left:0;top:0;pointer-events:none}
+.success-text{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+              font-size:48px;font-weight:bold;color:#e84393;opacity:0}
+@keyframes pop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+              60%{transform:translate(-50%,-50%) scale(1.2);opacity:1}
+              100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
 </style>
+<!-- ==== Paper.js CDN ==== -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-full.min.js"></script>
 </head>
 <body>
-<div id="topbar">
-  <span id="stageName">Stage 1 / 縦線</span>
-  <button id="nextBtn">次へ</button>
+<div style="display:flex;flex-direction:column;height:100vh">
+  <header>
+    <h1>えんぴつあそび</h1>
+    <div class="stage-badge"><span id="stageName">–</span></div>
+  </header>
+
+  <canvas id="canvas" resize></canvas>
+
+  <!-- 一番上に透明レイヤーを重ねて花火描画用 -->
+  <canvas id="confetti-layer"></canvas>
+
+  <div class="controls">
+    <button id="prev">まえ</button>
+    <button id="clear">けす</button>
+    <button id="next">つぎ</button>
+  </div>
 </div>
-<canvas id="canvas"></canvas>
 
-<script>
-/* ==== 基本データ ==== */
-const STAGES = [
-  { id:"S1-1", name:"縦線をなぞろう", tolerance:15, guide:(ctx,w,h)=>{
-      ctx.strokeStyle="#ccc";ctx.lineWidth=4;
-      ctx.beginPath(); ctx.moveTo(w/2, h*0.1); ctx.lineTo(w/2, h*0.9); ctx.stroke();
-      return new Path2D(`M ${w/2} ${h*0.1} L ${w/2} ${h*0.9}`);
-  }},
-  // 以降 S1-2 … S7 を追加
-];
-
-/* ==== DOM ==== */
-const canvas = document.getElementById("canvas");
-const ctx     = canvas.getContext("2d");
-const stageName = document.getElementById("stageName");
-const nextBtn = document.getElementById("nextBtn");
-
-/* ==== リサイズ ==== */
-function fitCanvas(){canvas.width=canvas.clientWidth;canvas.height=canvas.clientHeight;renderGuide()}
-window.addEventListener("resize",fitCanvas);
-
-/* ==== ステージ制御 ==== */
-let currentStageIndex=0, guidePath=null, drawing=[], isDown=false;
-function loadStage(i){
-  currentStageIndex=i; const st=STAGES[i];
-  stageName.textContent=`Stage ${i+1} – ${st.name}`;
-  drawing=[]; guidePath=null; fitCanvas();
-}
-nextBtn.onclick=()=>loadStage((currentStageIndex+1)%STAGES.length);
-
-/* ==== ガイド描画 ==== */
-function renderGuide(){
-  const st=STAGES[currentStageIndex];
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  guidePath=st.guide(ctx,canvas.width,canvas.height);
-}
-
-/* ==== 入力 ==== */
-canvas.addEventListener("pointerdown",e=>{
-  if(e.pointerType!=="pen"&&e.pointerType!=="touch"&&e.pointerType!=="mouse")return;
-  isDown=true; drawing=[[e.offsetX,e.offsetY]];
-});
-canvas.addEventListener("pointermove",e=>{
-  if(!isDown)return;
-  drawing.push([e.offsetX,e.offsetY]);
-  drawStroke();
-});
-canvas.addEventListener("pointerup",e=>{
-  isDown=false;
-  evaluate();
-});
-function drawStroke(){
-  ctx.lineCap="round"; ctx.lineJoin="round";
-  ctx.strokeStyle="#000"; ctx.lineWidth=3;
-  ctx.beginPath();
-  const d=drawing;
-  ctx.moveTo(d[d.length-2][0],d[d.length-2][1]);
-  ctx.lineTo(d[d.length-1][0],d[d.length-1][1]);
-  ctx.stroke();
-}
-
-/* ==== 評価 ==== */
-function evaluate(){
-  const st=STAGES[currentStageIndex]; if(!guidePath)return;
-  // サンプリングして平均距離計算
-  let sum=0,count=0;
-  for(const [x,y] of drawing){
-    const isOn = ctx.isPointInStroke(guidePath,x,y);
-    if(!isOn) sum++;
-    count++;
+<!-- ==== ✂️ stages.js 相当 ==== -->
+<script type="module" id="stages-module">
+export const STAGES = [
+  {
+    id:'free', name:'じゆうにえがこう', type:'free',
+    description:'すきなせんをかいてみよう！'
+  },
+  {
+    id:'vert', name:'たてせん', type:'trace',
+    guideLines:[{type:'line',start:{x:.5,y:.15},end:{x:.5,y:.85},stroke:8,tol:.10}]
+  },
+  {
+    id:'horiz', name:'よこせん', type:'trace',
+    guideLines:[{type:'line',start:{x:.15,y:.5},end:{x:.85,y:.5},stroke:8,tol:.10}]
+  },
+  {
+    id:'diag', name:'ななめ', type:'trace',
+    guideLines:[{type:'line',start:{x:.15,y:.15},end:{x:.85,y:.85},stroke:8,tol:.12}]
+  },
+  {
+    id:'curve', name:'カーブ', type:'trace',
+    guideLines:[{type:'curve',points:[
+      {x:.15,y:.6},{x:.5,y:.2},{x:.85,y:.6}],stroke:8,tol:.12}]
+  },
+  {
+    id:'spiral', name:'うずまき', type:'trace',
+    guideLines:[{type:'spiral',center:{x:.5,y:.5},radius:.35,turns:2,stroke:8,tol:.15}]
   }
-  const errRatio = sum/count;
-  showResult(errRatio < st.tolerance/100 ? "Success!" : "Try Again");
-}
-function showResult(msg){
-  const div=document.createElement("div");
-  div.className="result"; div.textContent=msg;
-  document.body.appendChild(div);
-  setTimeout(()=>div.remove(),800);
-}
-
-/* ==== 起動 ==== */
-loadStage(0);
+];
 </script>
+
+<!-- ==== ✂️ utils.js (汎用) ==== -->
+<script type="module" id="utils-module">
+export function lerp(a,b,t){return a+(b-a)*t}
+export function createOsc(freq,dur=0.5){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const osc=ctx.createOscillator();
+  const gain=ctx.createGain();
+  osc.type='sine';osc.frequency.value=freq;
+  gain.gain.value=.25;
+  osc.connect(gain);gain.connect(ctx.destination);
+  osc.start();gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur);
+  setTimeout(()=>osc.stop(),dur*1000);
+}
+export function rand(min,max){return Math.random()*(max-min)+min}
+</script>
+
+<!-- ==== ✂️ drawing.js ==== -->
+<script type="module" id="drawing-module">
+import {STAGES} from '#stages-module';
+import {lerp} from '#utils-module';
+import {validateTrace} from '#validation-module';
+import {fireworks,showSuccessText} from '#rewards-module';
+
+paper.install(window);
+const canvas=document.getElementById('canvas');
+const confetti=document.getElementById('confetti-layer');
+paper.setup(canvas);
+const confettiProject=new paper.Project(confetti);
+confetti.width=canvas.clientWidth;confetti.height=canvas.clientHeight;
+
+let stageIdx=0;
+let currentPath=null;
+let drawingLayer=null;
+let guideLayer=null;
+
+const stageNameEl=document.getElementById('stageName');
+function drawStage(){
+  paper.project.activeLayer.removeChildren();
+  guideLayer=new Layer();drawingLayer=new Layer();
+  const st=STAGES[stageIdx];
+  stageNameEl.textContent=st.name;
+  // 説明テキスト
+  if(st.description){
+    new PointText({
+      point:new Point(view.center.x,40),
+      content:st.description,fillColor:'#636e72',
+      fontSize:24,justification:'center'
+    });
+  }
+  // ガイド描画
+  if(st.type==='trace'){
+    st.guideLines.forEach(g=>{
+      if(g.type==='line'){
+        const s=new Point(g.start.x*view.size.width,g.start.y*view.size.height);
+        const e=new Point(g.end.x*view.size.width,g.end.y*view.size.height);
+        new Path.Line({segments:[s,e],strokeColor:'#dfe6e9',
+          strokeWidth:g.stroke,dashArray:[16,12],strokeCap:'round'});
+      }else if(g.type==='curve'){
+        const pts=g.points.map(p=>new Point(p.x*view.size.width,p.y*view.size.height));
+        const path=new Path({segments:pts,strokeColor:'#dfe6e9',
+          strokeWidth:g.stroke,dashArray:[16,12],strokeCap:'round'});path.smooth();
+      }else if(g.type==='spiral'){
+        const c=new Point(g.center.x*view.size.width,g.center.y*view.size.height);
+        const path=new Path({strokeColor:'#dfe6e9',strokeWidth:g.stroke,dashArray:[16,12]});
+        const steps=g.turns*36;
+        for(let i=0;i<=steps;i++){
+          const ang=i*Math.PI/18;const dist=g.radius*Math.min(view.size.width,view.size.height)*i/steps;
+          path.add(c.add(new Point(Math.cos(ang)*dist,Math.sin(ang)*dist)));
+        }path.smooth();
+      }
+    });
+  }
+}
+drawStage();
+
+/* ==== ペンツール ==== */
+const tool=new Tool();
+tool.onMouseDown=e=>{
+  currentPath=new Path({
+    segments:[e.point],strokeColor:'#3498db',strokeWidth:6,
+    strokeCap:'round',strokeJoin:'round'
+  });
+  drawingLayer.addChild(currentPath);
+};
+tool.onMouseDrag=e=>{
+  if(!currentPath)return;currentPath.add(e.point);
+  if(e.event.pressure)currentPath.strokeWidth=Math.max(2,e.event.pressure*10);
+};
+tool.onMouseUp=e=>{
+  if(!currentPath)return;
+  currentPath.simplify(10);
+  const st=STAGES[stageIdx];
+  if(st.type==='trace'){
+    const ok=validateTrace(currentPath,st);
+    if(ok){
+      fireworks(confettiProject);showSuccessText();
+      setTimeout(()=>nextStage(),1400);
+    }
+  }
+  currentPath=null;
+};
+
+/* ==== ステージ遷移 ==== */
+function prevStage(){if(stageIdx>0){stageIdx--;drawStage();}}
+function nextStage(){if(stageIdx<STAGES.length-1){stageIdx++;drawStage();}}
+function clearUser(){drawingLayer.removeChildren();}
+
+document.getElementById('prev').onclick=prevStage;
+document.getElementById('next').onclick=nextStage;
+document.getElementById('clear').onclick=clearUser;
+
+/* iOS Safari 2-finger scroll 防止 */
+document.addEventListener('touchmove',e=>{
+  if(e.target===canvas)e.preventDefault();
+},{passive:false});
+</script>
+
+<!-- ==== ✂️ validation.js ==== -->
+<script type="module" id="validation-module">
+import {lerp} from '#utils-module';
+export function validateTrace(userPath,stage){
+  // 総合 OK フラグ
+  if(!stage.guideLines) return true;
+  const tolPx = t => t*Math.min(paper.view.size.width,paper.view.size.height);
+  return stage.guideLines.every(g=>{
+    if(g.type==='line'){
+      const s=new Point(g.start.x*view.size.width,g.start.y*view.size.height);
+      const e=new Point(g.end.x*view.size.width,g.end.y*view.size.height);
+      const guide=new Path.Line({segments:[s,e]});guide.visible=false;
+      const nearStart=userPath.firstSegment.point.getDistance(s)<tolPx(g.tol);
+      const nearEnd=userPath.lastSegment.point.getDistance(e)<tolPx(g.tol);
+      let pathOK=true;
+      for(const seg of userPath.segments){
+        if(seg.point.getDistance(guide.getNearestPoint(seg.point))>tolPx(g.tol)){pathOK=false;break;}
+      }
+      guide.remove();
+      return nearStart&&nearEnd&&pathOK;
+    }
+    if(g.type==='curve'){
+      const pts=g.points.map(p=>new Point(p.x*view.size.width,p.y*view.size.height));
+      const guide=new Path({segments:pts});guide.smooth();guide.visible=false;
+      const nearS=userPath.firstSegment.point.getDistance(guide.firstSegment.point)<tolPx(g.tol);
+      const nearE=userPath.lastSegment.point.getDistance(guide.lastSegment.point)<tolPx(g.tol);
+      let ok=true;
+      for(const seg of userPath.segments){
+        if(seg.point.getDistance(guide.getNearestPoint(seg.point))>tolPx(g.tol)){ok=false;break;}
+      }
+      guide.remove();return nearS&&nearE&&ok;
+    }
+    if(g.type==='spiral'){
+      const center=new Point(g.center.x*view.size.width,g.center.y*view.size.height);
+      const lenOK=userPath.length > g.turns*2*Math.PI*g.radius*Math.min(view.size.width,view.size.height)*.6;
+      const startOK=center.getDistance(userPath.firstSegment.point)<tolPx(g.tol)*2;
+      return lenOK&&startOK;
+    }
+    return true;
+  });
+}
+</script>
+
+<!-- ==== ✂️ rewards.js ==== -->
+<script type="module" id="rewards-module">
+import {rand,createOsc} from '#utils-module';
+export function fireworks(project){
+  const NUM=24, colors=['#fdcb6e','#ff7675','#74b9ff','#55efc4','#a29bfe'];
+  for(let i=0;i<NUM;i++){
+    const star=new Path.Star({
+      center:[rand(0,project.view.size.width),rand(0,project.view.size.height)],
+      points:5,innerRadius:rand(6,10),outerRadius:rand(12,18),
+      fillColor:colors[Math.floor(Math.random()*colors.length)],
+      opacity:1
+    });
+    star.tween({scaling:new Point(0,0)},{scaling:new Point(1,1)},400)
+        .then(()=>star.tween({opacity:1},{opacity:0},400)
+        .then(()=>star.remove()));
+    star.tween('rotation',0,360,800);
+  }
+  // chime
+  [523.25,659.25,783.99].forEach((f,i)=>setTimeout(()=>createOsc(f,.4),i*150));
+}
+export function showSuccessText(){
+  const msgs=['すごい！','できた！','じょうず！','ぴったり！','すてき！'];
+  const div=document.createElement('div');div.className='success-text';
+  div.textContent=msgs[Math.floor(Math.random()*msgs.length)];
+  document.body.appendChild(div);
+  div.style.animation='pop .9s forwards';
+  setTimeout(()=>div.remove(),900);
+}
+</script>
+
 </body>
 </html>
